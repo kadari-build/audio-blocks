@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Voice Assistant</title>
+    <!-- 
+    Styles are organized into sections:
+    1. Core layout and positioning
+    2. UI components (panels, buttons, inputs)
+    3. Task list styling
+    4. Debug panel styling
+    -->
+    <style>
+        /* Theme Variables */
+        :root {
+            /* Light theme colors */
+            --bg-gradient-start: #f6f8ff;
+            --bg-gradient-end: #ffffff;
+            --text-primary: #1e293b;
+            --text-secondary: rgba(70, 70, 100, 0.8);
+            --surface-primary: rgba(255, 255, 255, 0.95);
+            --surface-secondary: rgba(255, 255, 255, 0.9);
+            --accent-primary: #4f46e5;
+            --accent-secondary: #4338ca;
+            --border-color: rgba(0, 0, 0, 0.08);
+            --shadow-color: rgba(0, 0, 0, 0.08);
+            --debug-info-bg: #f0f7ff;
+            --debug-info-color: #1e40af;
+            --debug-error-bg: #fef2f2;
+            --debug-error-color: #991b1b;
+            --canvas-fade: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Dark theme colors */
+        [data-theme="dark"] {
+            --bg-gradient-start: #0f172a;
+            --bg-gradient-end: #1e293b;
+            --text-primary: #f1f5f9;
+            --text-secondary: rgba(241, 245, 249, 0.8);
+            --surface-primary: rgba(30, 41, 59, 0.95);
+            --surface-secondary: rgba(30, 41, 59, 0.9);
+            --accent-primary: #818cf8;
+            --accent-secondary: #6366f1;
+            --border-color: rgba(255, 255, 255, 0.08);
+            --shadow-color: rgba(0, 0, 0, 0.3);
+            --debug-info-bg: #1e3a8a;
+            --debug-info-color: #bfdbfe;
+            --debug-error-bg: #7f1d1d;
+            --debug-error-color: #fecaca;
+            --canvas-fade: rgba(15, 23, 42, 0.2);
+        }
+
+        /* Core layout */
+        body {
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
+            overflow: hidden;
+            position: relative;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            color: var(--text-primary);
+            transition: all 0.3s ease;
+        }
+        canvas {
+            position: absolute;
+            z-index: 1;
+            filter: blur(1px);
+        }
+
+        /* Modern UI Components */
+        .hint-text {
+            position: absolute;
+            bottom: 30px;
+            color: var(--text-secondary);
+            font-size: 15px;
+            text-align: center;
+            z-index: 2;
+            font-weight: 500;
+            letter-spacing: 0.3px;
+            background: var(--surface-secondary);
+            padding: 12px 24px;
+            border-radius: 20px;
+            box-shadow: 0 4px 6px var(--shadow-color);
+            backdrop-filter: blur(10px);
+            transform: translateY(0);
+            transition: all 0.3s ease;
+        }
+        .hint-text:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px var(--shadow-color);
+        }
+        .config-panel {
+            position: fixed;
+            top: 30px;
+            left: 30px;
+            background: var(--surface-primary);
+            padding: 24px;
+            border-radius: 16px;
+            box-shadow: 0 8px 16px var(--shadow-color);
+            z-index: 3;
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-color);
+            transition: all 0.3s ease;
+        }
+        .config-panel:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 20px var(--shadow-color);
+        }
+        .config-panel button {
+            background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 15px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px rgba(79, 70, 229, 0.2);
+        }
+        .config-panel button:hover {
+            background: linear-gradient(135deg, var(--accent-secondary) 0%, var(--accent-primary) 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 6px 8px rgba(79, 70, 229, 0.3);
+        }
+
+        /* Status and Transcript */
+        .status, .transcript {
+            position: fixed;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--surface-primary);
+            padding: 16px 32px;
+            border-radius: 16px;
+            box-shadow: 0 8px 16px var(--shadow-color);
+            z-index: 4;
+            backdrop-filter: blur(10px);
+            font-weight: 500;
+            border: 1px solid var(--border-color);
+            transition: all 0.3s ease;
+            min-width: 200px;
+            text-align: center;
+            color: var(--accent-primary);
+        }
+        .status {
+            top: 30px;
+            font-size: 15px;
+        }
+        .transcript {
+            bottom: 90px;
+            display: none;
+            color: var(--text-primary);
+            font-size: 16px;
+            line-height: 1.5;
+            max-width: 600px;
+            width: 80%;
+        }
+        .status:hover, .transcript:hover {
+            transform: translateX(-50%) translateY(-2px);
+            box-shadow: 0 12px 20px var(--shadow-color);
+        }
+
+        /* Debug Panel */
+        .debug-toggle {
+            position: fixed;
+            bottom: 30px;
+            left: 30px;
+            background: var(--surface-primary);
+            padding: 10px 20px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 13px;
+            color: var(--accent-primary);
+            z-index: 5;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px var(--shadow-color);
+            border: 1px solid var(--border-color);
+            font-weight: 500;
+        }
+        .debug-toggle:hover {
+            background: var(--surface-secondary);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px var(--shadow-color);
+        }
+        .debug-panel {
+            position: fixed;
+            left: 30px;
+            bottom: 80px;
+            width: 320px;
+            background: var(--surface-primary);
+            border-radius: 16px;
+            box-shadow: 0 8px 16px var(--shadow-color);
+            z-index: 5;
+            display: none;
+            border: 1px solid var(--border-color);
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+        .debug-panel.visible {
+            display: block;
+            animation: slideUp 0.3s ease;
+        }
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .debug-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--surface-secondary);
+            border-radius: 16px 16px 0 0;
+        }
+        .debug-header span {
+            font-weight: 600;
+            color: var(--text-primary);
+            font-size: 14px;
+        }
+        .debug-header button {
+            background: var(--accent-primary);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .debug-header button:hover {
+            background: var(--accent-secondary);
+            transform: translateY(-1px);
+        }
+        .debug-content {
+            padding: 16px;
+            max-height: 240px;
+            overflow-y: auto;
+            font-family: 'SF Mono', Menlo, Monaco, Consolas, monospace;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+        .debug-content::-webkit-scrollbar {
+            width: 8px;
+        }
+        .debug-content::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.02);
+            border-radius: 4px;
+        }
+        .debug-content::-webkit-scrollbar-thumb {
+            background: rgba(0, 0, 0, 0.1);
+            border-radius: 4px;
+        }
+        .debug-entry {
+            margin-bottom: 8px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            line-height: 1.5;
+            transition: all 0.2s ease;
+        }
+        .debug-entry:hover {
+            transform: translateX(2px);
+        }
+        .debug-entry.error {
+            background: var(--debug-error-bg);
+            color: var(--debug-error-color);
+            border-left: 3px solid #dc2626;
+        }
+        .debug-entry.info {
+            background: var(--debug-info-bg);
+            color: var(--debug-info-color);
+            border-left: 3px solid #3b82f6;
+        }
+
+        /* Theme Toggle Button */
+        .theme-toggle {
+            position: fixed;
+            top: 30px;
+            right: 30px;
+            background: var(--surface-primary);
+            padding: 12px;
+            border-radius: 50%;
+            cursor: pointer;
+            z-index: 1000;
+            box-shadow: 0 4px 6px var(--shadow-color);
+            border: 1px solid var(--border-color);
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .theme-toggle:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px var(--shadow-color);
+        }
+
+        .theme-toggle svg {
+            width: 24px;
+            height: 24px;
+            color: var(--accent-primary);
+        }
+    </style>
+</head>
+<body>
+    <!-- Theme Toggle Button -->
+    <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" id="theme-icon">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+        </svg>
+    </button>
+
+    <!-- Main canvas for audio visualization -->
+    <canvas id="visualizer"></canvas>
+
+    <!-- Control panel -->
+    <div class="config-panel">
+        <button onclick="startVoiceChat()">Start Voice Chat</button>
+    </div>
+
+    <!-- Status indicators -->
+    <div class="status">Waiting to start...</div>
+    <div class="transcript"></div>
+    <div class="hint-text">Speak to interact</div>
+
+    <!-- Debug Panel -->
+    <div class="debug-toggle">Show Debug</div>
+    <div class="debug-panel">
+        <div class="debug-header">
+            <span>Debug Log</span>
+            <button class="copy-button" onclick="copyDebugLog()">Copy Log</button>
+        </div>
+        <div class="debug-content"></div>
+    </div>
+
+    <script type="module">
+        /**
+         * AI Voice Assistant Frontend
+         * --------------------------
+         * This script handles the frontend functionality of the AI Voice Assistant,
+         * including audio visualization, speech recognition, and UI management.
+         * 
+         * Key Features:
+         * - Real-time audio visualization using Canvas
+         * - Web Speech API integration
+         * - Debug logging system
+         */
+
+        // Core variables
+        const canvas = document.getElementById('visualizer');
+        const ctx = canvas.getContext('2d');
+        let audioContext;
+        let analyser;
+        let dataArray;
+        let animationId;
+        let particles = [];
+        let hue = 220;
+        let recognition;
+        let isListening = false;
+        let sessionId = null;
+        let isSpeaking = false;
+        let currentSpeaker = 'none';
+        let mediaRecorder = null;
+        let audioChunks = [];
+        
+        // Constants
+        const statusDiv = document.querySelector('.status');
+        const transcriptDiv = document.querySelector('.transcript');
+        const SERVER_URL = 'http://localhost:7777';
+        const debugPanel = document.querySelector('.debug-panel');
+        const debugContent = document.querySelector('.debug-content');
+        const debugToggle = document.querySelector('.debug-toggle');
+        let isDebugVisible = false;
+
+        // Add theme toggle functionality
+        let currentTheme = localStorage.getItem('theme') || 'light';
+        document.body.setAttribute('data-theme', currentTheme);
+        updateThemeIcon(currentTheme);
+
+        window.toggleTheme = function() {
+            currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+            document.body.setAttribute('data-theme', currentTheme);
+            localStorage.setItem('theme', currentTheme);
+            updateThemeIcon(currentTheme);
+            log(`Theme switched to ${currentTheme} mode`);
+        };
+
+        function updateThemeIcon(theme) {
+            const icon = document.getElementById('theme-icon');
+            if (theme === 'dark') {
+                icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />';
+            } else {
+                icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />';
+            }
+        }
+
+        /**
+         * Logging system for debugging and development
+         */
+        function log(message, level = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `debug-entry ${level}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            debugContent.appendChild(entry);
+            debugContent.scrollTop = debugContent.scrollHeight;
+            console.log(`[${level.toUpperCase()}] ${message}`);
+        }
+
+        debugToggle.addEventListener('click', () => {
+            isDebugVisible = !isDebugVisible;
+            debugPanel.classList.toggle('visible');
+            debugToggle.textContent = isDebugVisible ? 'Hide Debug' : 'Show Debug';
+        });
+
+        function getCloudColors(cloudIndex, theme) {
+            if (theme === 'dark') {
+                return cloudIndex === 0 ? 
+                    { hue: 230, saturation: 84, brightness: 90 } : 
+                    { hue: 170, saturation: 84, brightness: 90 };
+            }
+            return cloudIndex === 0 ? 
+                { hue: 230, saturation: 70, brightness: 60 } : 
+                { hue: 170, saturation: 70, brightness: 60 };
+        }
+
+        class Particle {
+            constructor(x, y, baseRadius, cloudIndex) {
+                this.x = x;
+                this.y = y;
+                this.baseRadius = baseRadius;
+                this.radius = baseRadius;
+                this.angle = Math.random() * Math.PI * 2;
+                this.velocity = 0.005 + Math.random() * 0.01;
+                this.distance = 60 + Math.random() * 120;
+                this.originalX = x;
+                this.originalY = y;
+                this.cloudIndex = cloudIndex;
+                this.alpha = 0.4 + Math.random() * 0.3;
+                this.updateColors();
+            }
+
+            updateColors() {
+                const colors = getCloudColors(this.cloudIndex, currentTheme);
+                this.hue = colors.hue + Math.random() * 30;
+                this.saturation = colors.saturation + Math.random() * 30;
+                this.brightness = colors.brightness + Math.random() * 20;
+            }
+
+            update(intensity) {
+                this.angle += this.velocity * (1 + intensity * 0.8);
+                this.x = this.originalX + Math.cos(this.angle) * this.distance * (0.5 + intensity * 0.5);
+                this.y = this.originalY + Math.sin(this.angle) * this.distance * (0.5 + intensity * 0.5);
+                this.radius = this.baseRadius * (1 + intensity * 1.5);
+                this.alpha = 0.4 + intensity * 0.3;
+                this.updateColors();
+            }
+
+            draw(ctx) {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = `hsla(${this.hue}, ${this.saturation}%, ${this.brightness}%, ${this.alpha})`;
+                ctx.fill();
+            }
+        }
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            initParticles();
+        }
+
+        function initParticles() {
+            const numParticlesPerCloud = 50; // Half the original amount for each cloud
+            particles = [];
+
+            // Create first cloud (left side)
+            const center1X = canvas.width * 0.3; // 30% from the left
+            const center1Y = canvas.height / 2;
+            
+            // Create second cloud (right side)
+            const center2X = canvas.width * 0.7; // 70% from the left
+            const center2Y = canvas.height / 2;
+
+            // Initialize particles for first cloud
+            for (let i = 0; i < numParticlesPerCloud; i++) {
+                const angle = (i / numParticlesPerCloud) * Math.PI * 2;
+                const distance = 100 + Math.random() * 50;
+                const x = center1X + Math.cos(angle) * distance;
+                const y = center1Y + Math.sin(angle) * distance;
+                particles.push(new Particle(x, y, 2 + Math.random() * 3, 0));
+            }
+
+            // Initialize particles for second cloud
+            for (let i = 0; i < numParticlesPerCloud; i++) {
+                const angle = (i / numParticlesPerCloud) * Math.PI * 2;
+                const distance = 100 + Math.random() * 50;
+                const x = center2X + Math.cos(angle) * distance;
+                const y = center2Y + Math.sin(angle) * distance;
+                particles.push(new Particle(x, y, 2 + Math.random() * 3, 1));
+            }
+        }
+
+        async function initAudio() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioContext = new AudioContext();
+                const source = audioContext.createMediaStreamSource(stream);
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 512;
+                source.connect(analyser);
+                dataArray = new Uint8Array(analyser.frequencyBinCount);
+                draw();
+            } catch (err) {
+                console.error('Error accessing microphone:', err);
+                dataArray = new Uint8Array(256).fill(128);
+                draw();
+            }
+        }
+
+        function getAudioIntensity() {
+            if (!analyser) return 0.2;
+            
+            analyser.getByteTimeDomainData(dataArray);
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+                const value = (dataArray[i] - 128) / 128;
+                sum += value * value;
+            }
+            
+            // Add artificial intensity when AI is speaking
+            if (currentSpeaker === 'ai' && isSpeaking) {
+                return Math.min(1, Math.sqrt(sum / dataArray.length) * 5 + 0.3 + Math.sin(Date.now() / 100) * 0.2);
+            }
+            
+            return Math.min(1, Math.sqrt(sum / dataArray.length) * 5);
+        }
+
+        function drawConnection(p1, p2, intensity) {
+            // Only draw connections between particles in the same cloud
+            if (p1.cloudIndex !== p2.cloudIndex) return;
+            
+            const distance = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+            if (distance < 100) {
+                ctx.beginPath();
+                ctx.moveTo(p1.x, p1.y);
+                ctx.lineTo(p2.x, p2.y);
+                const alpha = (1 - distance / 100) * 0.15 * intensity;
+                ctx.strokeStyle = `hsla(${hue}, 80%, 50%, ${alpha})`;
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
+        }
+
+        function draw() {
+            animationId = requestAnimationFrame(draw);
+            
+            const intensity = getAudioIntensity();
+            ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--canvas-fade');
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Update and draw particles
+            particles.forEach(particle => {
+                particle.update(intensity);
+                particle.draw(ctx);
+            });
+
+            // Draw connections between nearby particles
+            for (let i = 0; i < particles.length; i++) {
+                for (let j = i + 1; j < particles.length; j++) {
+                    drawConnection(particles[i], particles[j], intensity);
+                }
+            }
+
+            // Draw central glow for both clouds
+            const centers = [
+                { x: canvas.width * 0.3, y: canvas.height / 2, ...getCloudColors(0, currentTheme) },
+                { x: canvas.width * 0.7, y: canvas.height / 2, ...getCloudColors(1, currentTheme) }
+            ];
+
+            centers.forEach(center => {
+                const gradient = ctx.createRadialGradient(
+                    center.x, center.y, 0,
+                    center.x, center.y, 200
+                );
+                gradient.addColorStop(0, `hsla(${center.hue}, ${center.saturation}%, ${center.brightness}%, ${0.15 * intensity})`);
+                gradient.addColorStop(1, 'transparent');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            });
+        }
+
+        async function checkSystemRequirements() {
+            log('Checking system requirements...');
+            
+            try {
+                // Check for required APIs
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    log('MediaDevices API not available', 'error');
+                    return false;
+                }
+                log('MediaDevices API available');
+
+                if (!window.SpeechRecognition && !window.webkitSpeechRecognition) {
+                    log('Speech Recognition API not available', 'error');
+                    return false;
+                }
+                log('Speech Recognition API available');
+
+                if (!window.speechSynthesis) {
+                    log('Speech Synthesis API not available', 'error');
+                    return false;
+                }
+                log('Speech Synthesis API available');
+
+                return true;
+            } catch (error) {
+                log(`Error checking system requirements: ${error.message}`, 'error');
+                return false;
+            }
+        }
+
+        function copyDebugLog() {
+            const debugText = Array.from(debugContent.children)
+                .map(entry => entry.textContent)
+                .join('\n');
+            navigator.clipboard.writeText(debugText)
+                .then(() => {
+                    const copyBtn = document.querySelector('.copy-button');
+                    copyBtn.textContent = 'Copied!';
+                    setTimeout(() => {
+                        copyBtn.textContent = 'Copy Log';
+                    }, 2000);
+                })
+                .catch(err => log('Failed to copy debug log: ' + err.message, 'error'));
+        }
+
+        // Make copyDebugLog available globally
+        window.copyDebugLog = copyDebugLog;
+
+        async function testBackendConnection() {
+            try {
+                log('Testing backend connection...');
+                const response = await fetch(`${SERVER_URL}/test`, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.error || `Backend responded with status ${response.status}`);
+                }
+                
+                const data = await response.json();
+                if (data.status !== 'ok') {
+                    throw new Error('Unexpected response from server');
+                }
+                
+                log('Backend connection successful');
+                return true;
+            } catch (error) {
+                log(`Backend connection failed: ${error.message}`, 'error');
+                return false;
+            }
+        }
+
+        async function initVoiceChat() {
+            try {
+                log('Initializing voice chat...');
+                
+                if (!await checkSystemRequirements()) {
+                    throw new Error('System requirements not met');
+                }
+
+                // Initialize and select the best available voice
+                log('Initializing text-to-speech voices...');
+                await new Promise((resolve) => {
+                    if (speechSynthesis.getVoices().length) {
+                        resolve();
+                    } else {
+                        speechSynthesis.onvoiceschanged = resolve;
+                    }
+                });
+
+                const voices = speechSynthesis.getVoices();
+                log(`Available voices: ${voices.length}`);
+                
+                // Priority list for English female voices
+                const preferredVoices = [
+                    'Samantha',  // macOS female voice
+                    'Microsoft Zira',  // Windows female voice
+                    'Google US English Female'  // Chrome female voice
+                ];
+                
+                let selectedVoice = null;
+                
+                // Try to find a preferred voice
+                for (const preferredName of preferredVoices) {
+                    const voice = voices.find(v => v.name.includes(preferredName));
+                    if (voice) {
+                        selectedVoice = voice;
+                        log(`Selected preferred voice: ${voice.name}`);
+                        break;
+                    }
+                }
+                
+                // If no preferred voice found, try to find any English female voice
+                if (!selectedVoice) {
+                    selectedVoice = voices.find(v => v.lang.startsWith('en') && v.name.toLowerCase().includes('female'));
+                }
+                
+                // Fallback to any English voice
+                if (!selectedVoice) {
+                    selectedVoice = voices.find(v => v.lang.startsWith('en'));
+                    log('Using fallback English voice', 'warning');
+                }
+
+                if (!selectedVoice) {
+                    throw new Error('No suitable voice found for text-to-speech');
+                }
+
+                // Store the selected voice for later use
+                window.selectedVoice = selectedVoice;
+                log(`Final selected voice: ${selectedVoice.name}`);
+
+                // Test backend connection first
+                if (!await testBackendConnection()) {
+                    throw new Error('Cannot connect to backend server. Please make sure you are accessing the page through http://localhost:7777');
+                }
+
+                // Initialize session with backend
+                log('Initializing session...');
+                const response = await fetch(`${SERVER_URL}/init`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.error || `Backend responded with status ${response.status}`);
+                }
+
+                const data = await response.json();
+                sessionId = data.session_id;
+                log('Session initialized successfully');
+
+                // Set up audio recording
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                
+                // Initialize speech recognition
+                recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+                recognition.lang = 'en-US';
+                recognition.continuous = false;
+                recognition.interimResults = false;
+
+                recognition.onresult = async (event) => {
+                    const transcript = event.results[0][0].transcript;
+                    log(`User said: ${transcript}`);
+                    transcriptDiv.style.display = 'block';
+                    transcriptDiv.textContent = "You: " + transcript;
+
+                    try {
+                        // Send text to backend for AI response
+                        const response = await fetch(`${SERVER_URL}/chat`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json',
+                                'Session-ID': sessionId
+                            },
+                            body: JSON.stringify({ message: transcript })
+                        });
+
+                        if (!response.ok) {
+                            const errorData = await response.json().catch(() => ({}));
+                            throw new Error(errorData.error || 'Failed to get AI response');
+                        }
+
+                        const result = await response.json();
+                        
+                        if (result.response) {
+                            log(`AI response: ${result.response}`);
+                            transcriptDiv.textContent = "AI: " + result.response;
+
+                            // Play the high-quality audio response
+                            if (result.audio) {
+                                try {
+                                    currentSpeaker = 'ai';
+                                    isSpeaking = true;
+                                    statusDiv.textContent = "AI is speaking...";
+
+                                    // Convert hex string back to audio buffer
+                                    const audioBuffer = new Uint8Array(result.audio.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+                                    const audioBlob = new Blob([audioBuffer], { type: 'audio/mp3' });
+                                    const audioUrl = URL.createObjectURL(audioBlob);
+                                    const audio = new Audio(audioUrl);
+
+                                    audio.onended = () => {
+                                        currentSpeaker = 'user';
+                                        isSpeaking = false;
+                                        statusDiv.textContent = "Your turn...";
+                                        URL.revokeObjectURL(audioUrl);
+                                        
+                                        // Restart speech recognition after audio finishes
+                                        setTimeout(() => {
+                                            if (!isSpeaking) {
+                                                recognition.start();
+                                                log('Restarted speech recognition after AI response');
+                                            }
+                                        }, 800);
+                                    };
+
+                                    audio.onerror = (error) => {
+                                        log(`Audio playback error: ${error}`, 'error');
+                                        currentSpeaker = 'user';
+                                        isSpeaking = false;
+                                        statusDiv.textContent = "Your turn...";
+                                        URL.revokeObjectURL(audioUrl);
+                                        recognition.start();
+                                    };
+
+                                    audio.play().catch(error => {
+                                        log(`Failed to play audio: ${error}`, 'error');
+                                        currentSpeaker = 'user';
+                                        isSpeaking = false;
+                                        statusDiv.textContent = "Your turn...";
+                                        recognition.start();
+                                    });
+                                } catch (error) {
+                                    log(`Error processing audio response: ${error}`, 'error');
+                                    currentSpeaker = 'user';
+                                    isSpeaking = false;
+                                    statusDiv.textContent = "Your turn...";
+                                    recognition.start();
+                                }
+                            } else {
+                                log('No audio response received', 'warning');
+                                currentSpeaker = 'user';
+                                isSpeaking = false;
+                                statusDiv.textContent = "Your turn...";
+                                recognition.start();
+                            }
+                        }
+                    } catch (error) {
+                        log(`Error getting AI response: ${error.message}`, 'error');
+                        statusDiv.textContent = "Error: " + error.message;
+                        // Restart recognition on error
+                        recognition.start();
+                        log('Restarted speech recognition after AI response error');
+                    }
+                };
+
+                recognition.onerror = (event) => {
+                    log(`Speech recognition error: ${event.error}`, 'error');
+                    statusDiv.textContent = "Error: " + event.error;
+                    // Restart recognition after a short delay
+                    setTimeout(() => {
+                        recognition.start();
+                        log('Restarted speech recognition after error');
+                    }, 1000);
+                };
+
+                recognition.onend = () => {
+                    // Only restart if we're not speaking and it's the user's turn
+                    if (!isSpeaking && currentSpeaker === 'user') {
+                        recognition.start();
+                        log('Restarted speech recognition (onend)');
+                    }
+                };
+
+                // Start initial recognition
+                recognition.start();
+                log('Started speech recognition');
+                
+                statusDiv.textContent = "Voice chat ready!";
+                log('Voice chat initialization complete');
+                document.querySelector('.config-panel').style.display = 'none';
+            } catch (error) {
+                log(`Error initializing voice chat: ${error.message}`, 'error');
+                statusDiv.textContent = "Error initializing voice chat";
+                alert(`Failed to initialize voice chat: ${error.message}\n\nPlease make sure you are accessing the page through http://localhost:7777`);
+            }
+        }
+
+        // Make startVoiceChat available globally
+        window.startVoiceChat = async function() {
+            log('Starting voice chat...');
+            await initVoiceChat();
+            document.querySelector('.config-panel').style.display = 'none';
+        };
+
+        /**
+         * Initialize the application when the page loads
+         */
+        window.addEventListener('load', () => {
+            log('Application starting...');
+            initAudio().catch(error => {
+                log(`Error initializing audio: ${error.message}`, 'error');
+            });
+            // Auto-start voice chat
+            startVoiceChat();
+        });
+
+        // Initialize canvas and event listeners
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+    </script>
+</body>
+</html>
