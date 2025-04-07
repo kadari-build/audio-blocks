@@ -39,10 +39,25 @@ CORS(app, resources={
 # Load environment variables from .env file
 load_dotenv()
 
+# Debug logging for API key
+api_key = os.getenv('GOOGLE_API_KEY')
+if api_key:
+    print("API key loaded successfully")
+    print(f"API key length: {len(api_key)}")
+else:
+    print("WARNING: API key not found in environment variables")
+
 # Initialize Text-to-Speech client with API key
 tts_client = texttospeech_v1.TextToSpeechClient(
-    client_options={"api_key": os.getenv('GOOGLE_API_KEY')}
+    client_options={"api_key": api_key}
 )
+
+# Initialize Gemini
+try:
+    genai.configure(api_key=api_key)
+    print("Gemini API initialized successfully")
+except Exception as e:
+    print(f"Failed to initialize Gemini API: {str(e)}")
 
 # Task processing queue and patterns
 task_queue = Queue()
@@ -187,44 +202,24 @@ def init_gemini(api_key):
     """
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-2.0-flash',
-            generation_config={
-                "temperature": 0.7,
-                "top_p": 1,
-                "top_k": 1,
-                "max_output_tokens": 150,
-            },
-            safety_settings=[
-                {
-                    "category": "HARM_CATEGORY_HARASSMENT",
-                    "threshold": "BLOCK_MEDIUM_AND_ABOVE"
-                },
-                {
-                    "category": "HARM_CATEGORY_HATE_SPEECH",
-                    "threshold": "BLOCK_MEDIUM_AND_ABOVE"
-                },
-                {
-                    "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                    "threshold": "BLOCK_MEDIUM_AND_ABOVE"
-                },
-                {
-                    "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-                    "threshold": "BLOCK_MEDIUM_AND_ABOVE"
-                }
-            ]
+        
+        # List available models to debug
+        models = genai.list_models()
+        for model in models:
+            print("Available models:", model.name)
+        
+        # Use the correct model name for v1beta
+        model = genai.GenerativeModel('gemini-2.0-flash')
+        
+        # Initialize chat
+        chat = model.start_chat(history=[])
+        
+        # Send initial system prompt
+        chat.send_message(
+            "You are a professional AI assistant like Siri. Be helpful, efficient, and focused on tasks. "
+            "When asked to take notes or create documents, maintain those in a list. "
+            "Keep responses clear and professional."
         )
-
-        # Initialize chat with professional assistant context
-        chat = model.start_chat(history=[
-            {
-                "role": "user",
-                "parts": ["I want you to act as a professional AI assistant like Siri. Be helpful, efficient, and focused on tasks. When I ask you to take notes or create documents, maintain those in a list. Keep responses clear and professional."]
-            },
-            {
-                "role": "model",
-                "parts": ["I'll assist you professionally with your tasks. How can I help you today?"]
-            }
-        ])
         
         return chat
     except Exception as e:
@@ -256,7 +251,7 @@ def init_session():
         return '', 204
     try:
         # Use API key from environment variables
-        api_key = os.getenv('GOOGLE_GENERATIVE_LANGUAGE_API_KEY')
+        api_key = os.getenv('GOOGLE_API_KEY')
         
         if not api_key:
             return jsonify({'error': 'API key not found in environment variables'}), 400
@@ -338,8 +333,13 @@ def chat():
         session = chat_sessions[session_id]
         chat = session['chat']
 
-        # Generate response
-        response = chat.send_message(message)
+        try:
+            # Generate response
+            response = chat.send_message(message)
+            response_text = response.text
+        except Exception as e:
+            print(f"Chat error: {str(e)}")
+            return jsonify({'error': f'Failed to generate response: {str(e)}'}), 500
         
         # Update conversation history
         if 'history' not in session:
@@ -347,19 +347,19 @@ def chat():
         
         session['history'].append({
             'user': message,
-            'ai': response.text
+            'ai': response_text
         })
 
         # Generate speech for response
         try:
-            audio_content = generate_speech(response.text)
+            audio_content = generate_speech(response_text)
             audio_base64 = audio_content.hex()
         except Exception as e:
             audio_base64 = None
             print(f"Speech synthesis error: {e}")
         
         return jsonify({
-            'response': response.text,
+            'response': response_text,
             'audio': audio_base64,
             'status': 'success',
             'task_added': task_added,
@@ -367,6 +367,7 @@ def chat():
             'command_content': command_content
         })
     except Exception as e:
+        print(f"Chat endpoint error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
