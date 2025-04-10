@@ -15,7 +15,8 @@ Key Features:
 
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from google.cloud import texttospeech_v1
 import os
 from dotenv import load_dotenv
@@ -54,10 +55,12 @@ tts_client = texttospeech_v1.TextToSpeechClient(
 
 # Initialize Gemini
 try:
-    genai.configure(api_key=api_key)
-    print("Gemini API initialized successfully")
+    # Only configure the API key here, model initialization will happen in init_gemini
+    genai.Client(api_key=api_key)
+
+    print("Gemini API configured successfully")
 except Exception as e:
-    print(f"Failed to initialize Gemini API: {str(e)}")
+    print(f"Failed to configure Gemini API: {str(e)}")
 
 # Task processing queue and patterns
 task_queue = Queue()
@@ -142,12 +145,13 @@ def clean_text_for_speech(text):
     
     return text
 
-def generate_speech(text):
+def generate_speech(text, agent_config):
     """
     Generate high-quality speech from text using Google Cloud TTS.
     
     Args:
         text (str): The text to convert to speech
+        agent_config (dict): Configuration for the specific agent
         
     Returns:
         bytes: The audio content in MP3 format
@@ -163,9 +167,9 @@ def generate_speech(text):
         
         # Configure voice parameters for high quality output
         voice = texttospeech_v1.VoiceSelectionParams(
-            language_code="en-US",
-            name="en-US-Studio-O",  # Studio voice for highest quality
-            ssml_gender=texttospeech_v1.SsmlVoiceGender.FEMALE
+            language_code=agent_config['voice']['language_code'],
+            name=agent_config['voice']['name'],
+            ssml_gender=agent_config['voice']['ssml_gender']
         )
 
         # Configure audio parameters for optimal quality
@@ -187,12 +191,47 @@ def generate_speech(text):
     except Exception as e:
         raise Exception(f"Failed to generate speech: {str(e)}")
 
-def init_gemini(api_key):
+# Define available AI agents
+AI_AGENTS = {
+    'assistant': {
+        'name': 'Director of Product',
+        'model': 'gemini-2.0-flash',
+        'system_prompt': "You are a Director of Product at our startup. Be professional, concise, and efficient. Make sure to be humanistic, and not too formal.",
+        'voice': {
+            'language_code': 'en-US',
+            'name': 'en-US-Studio-O',
+            'ssml_gender': texttospeech_v1.SsmlVoiceGender.FEMALE
+        }
+    },
+    'creative': {
+        'name': 'Director of Marketing',
+        'model': 'gemini-2.0-flash',
+        'system_prompt': "You are the Director of Marketing at our startup. Be professional, concise, and efficient. Make sure to be humanistic, and not too formal.",
+        'voice': {
+            'language_code': 'en-US',
+            'name': 'en-US-Neural2-C',
+            'ssml_gender': texttospeech_v1.SsmlVoiceGender.FEMALE
+        }
+    },
+    'analyst': {
+        'name': 'Director of Engineering',
+        'model': 'gemini-2.0-flash',
+        'system_prompt': "You are the Director of Engineering at our startup. Be professional, concise, and efficient. Make sure to be humanistic, and not too formal.",
+        'voice': {
+            'language_code': 'en-US',
+            'name': 'en-US-Neural2-D',
+            'ssml_gender': texttospeech_v1.SsmlVoiceGender.MALE
+        }
+    }
+}
+
+def init_gemini(api_key, agent_config):
     """
-    Initialize Gemini chat model with specific configuration.
+    Initialize Gemini chat model with specific configuration for an agent.
     
     Args:
         api_key (str): The Gemini API key
+        agent_config (dict): Configuration for the specific agent
         
     Returns:
         genai.ChatSession: Initialized chat session
@@ -201,29 +240,29 @@ def init_gemini(api_key):
         Exception: If initialization fails
     """
     try:
-        genai.configure(api_key=api_key)
-        
-        # List available models to debug
-        models = genai.list_models()
-        for model in models:
-            print("Available models:", model.name)
-        
-        # Use the correct model name for v1beta
-        model = genai.GenerativeModel('gemini-2.0-flash')
-        
-        # Initialize chat
-        chat = model.start_chat(history=[])
-        
-        # Send initial system prompt
-        chat.send_message(
-            "You are a professional AI assistant like Siri. Be helpful, efficient, and focused on tasks. "
-            "When asked to take notes or create documents, maintain those in a list. "
-            "Keep responses clear and professional."
+        # Configure the API key
+        client = genai.Client(api_key=api_key)
+
+        chat_config = types.GenerateContentConfig(
+            system_instruction=agent_config['system_prompt'],
+            temperature=0.2,
         )
+
+        chat = client.chats.create(
+            model=agent_config['model'],
+            config=chat_config,
+            history=[]
+        )   
         
         return chat
     except Exception as e:
-        raise Exception(f"Failed to initialize Gemini: {str(e)}")
+        error_msg = str(e)
+        if "API key" in error_msg:
+            raise Exception("Invalid or missing API key. Please check your GOOGLE_API_KEY environment variable.")
+        elif "model" in error_msg.lower():
+            raise Exception("Failed to initialize Gemini model. Please check if the model is available in your region.")
+        else:
+            raise Exception(f"Failed to initialize Gemini: {error_msg}")
 
 # Global store for active chat sessions
 chat_sessions = {}
@@ -246,7 +285,7 @@ def test_connection():
 
 @app.route('/init', methods=['POST', 'OPTIONS'])
 def init_session():
-    """Initialize a new chat session"""
+    """Initialize a new chat session with multiple agents"""
     if request.method == 'OPTIONS':
         return '', 204
     try:
@@ -256,20 +295,30 @@ def init_session():
         if not api_key:
             return jsonify({'error': 'API key not found in environment variables'}), 400
 
-        # Initialize Gemini chat
-        try:
-            chat = init_gemini(api_key)
-        except Exception as e:
-            return jsonify({'error': str(e)}), 400
-
-        # Create new session
+        # Initialize chat sessions for all agents
         session_id = str(time.time())
         chat_sessions[session_id] = {
-            'chat': chat
+            'agents': {}
         }
+        
+        # Initialize each agent
+        for agent_id, agent_config in AI_AGENTS.items():
+            try:
+                chat = init_gemini(api_key, agent_config)
+                chat_sessions[session_id]['agents'][agent_id] = {
+                    'chat': chat,
+                    'config': agent_config
+                }
+            except Exception as e:
+                print(f"Failed to initialize agent {agent_id}: {str(e)}")
+                continue
+        
+        if not chat_sessions[session_id]['agents']:
+            return jsonify({'error': 'Failed to initialize any agents'}), 500
         
         return jsonify({
             'session_id': session_id,
+            'agents': {k: v['config']['name'] for k, v in chat_sessions[session_id]['agents'].items()},
             'status': 'initialized'
         })
     except Exception as e:
@@ -286,7 +335,7 @@ def synthesize_speech():
         if not text:
             return jsonify({'error': 'Text is required'}), 400
 
-        audio_content = generate_speech(text)
+        audio_content = generate_speech(text, AI_AGENTS['assistant']['voice'])
         
         return send_file(
             io.BytesIO(audio_content),
@@ -299,7 +348,7 @@ def synthesize_speech():
 
 @app.route('/chat', methods=['POST', 'OPTIONS'])
 def chat():
-    """Handle chat messages and generate responses"""
+    """Handle chat messages and generate responses from all agents"""
     if request.method == 'OPTIONS':
         return '', 204
     try:
@@ -314,57 +363,45 @@ def chat():
         if not message:
             return jsonify({'error': 'Message is required'}), 400
 
-        # Check for principal commands
-        command_type, command_content = check_principal_command(message)
-        task_added = False
-        
-        if command_type:
-            # Add task to processing queue
-            task = {
-                'type': command_type,
-                'content': command_content,
-                'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
-                'status': 'pending'
-            }
-            task_queue.put((session_id, task))
-            task_added = True
-
         # Get chat session
         session = chat_sessions[session_id]
-        chat = session['chat']
-
-        try:
-            # Generate response
-            response = chat.send_message(message)
-            response_text = response.text
-        except Exception as e:
-            print(f"Chat error: {str(e)}")
-            return jsonify({'error': f'Failed to generate response: {str(e)}'}), 500
         
-        # Update conversation history
-        if 'history' not in session:
-            session['history'] = []
-        
-        session['history'].append({
-            'user': message,
-            'ai': response_text
-        })
-
-        # Generate speech for response
-        try:
-            audio_content = generate_speech(response_text)
-            audio_base64 = audio_content.hex()
-        except Exception as e:
-            audio_base64 = None
-            print(f"Speech synthesis error: {e}")
+        # Get responses from all agents
+        responses = {}
+        for agent_id, agent_data in session['agents'].items():
+            try:
+                # Generate response
+                response = agent_data['chat'].send_message(message)
+                response_text = response.text
+                
+                # Generate speech
+                audio_content = generate_speech(response_text, agent_data['config'])
+                audio_base64 = audio_content.hex()
+                
+                responses[agent_id] = {
+                    'name': agent_data['config']['name'],
+                    'response': response_text,
+                    'audio': audio_base64
+                }
+                
+                # Update conversation history
+                if 'history' not in agent_data:
+                    agent_data['history'] = []
+                agent_data['history'].append({
+                    'user': message,
+                    'ai': response_text
+                })
+                
+            except Exception as e:
+                print(f"Error from agent {agent_id}: {str(e)}")
+                responses[agent_id] = {
+                    'name': agent_data['config']['name'],
+                    'error': str(e)
+                }
         
         return jsonify({
-            'response': response_text,
-            'audio': audio_base64,
-            'status': 'success',
-            'task_added': task_added,
-            'command_type': command_type,
-            'command_content': command_content
+            'responses': responses,
+            'status': 'success'
         })
     except Exception as e:
         print(f"Chat endpoint error: {str(e)}")
